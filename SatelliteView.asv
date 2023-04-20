@@ -10,7 +10,7 @@ R_E = 6371;  % [km] Earth's average radius
 %% Today's date and stop time.
 
 startTime = datetime(2022, 4, 1, 4, 0, 0);  % [date, time] 2022-04-01 04:00:00
-stopTime = startTime + hours(24);  % Simulation time, stop after 24 hours
+stopTime = startTime + hours(72);  % Simulation time, stop after 72 hours
 sampleTime = 60;  % [s] Simulation step
 
 
@@ -32,7 +32,6 @@ groundTrack(sat, LeadTime=1200);  % Show satellite ground tracks with a lead of 
 % sat_fov_track = fieldOfView(sat_comms);
 
 
-
 %% Ground Station
 
 name = "Valencia";
@@ -46,41 +45,23 @@ gs = groundStation(scenario, Name=name, Latitude=lat, Longitude=lon, Altitude=al
                    MinElevationAngle=elevation_min_angle);
 
 % Create a conical sensor (area over the globe) using the elevation. 
-% This is equivalent to the satellite coverage with the minimum elevation. 
-% Inexact, use only for graphical representation.
-% Assuming LEO, low orbit eccentricity
+% This is equivalent to the satellite coverage with the minimum elevation.
 
-sat_pos_start = states(sat, startTime, CoordinateFrame="geographic");  % [lat,long,height]
-sat_height = sat_pos_start(3) / 1e3;  % [km] Height of the satellite over Earth's surface
+sat_pos_start = states(sat, startTime, CoordinateFrame="geographic");
+sat_height = sat_pos_start(3);  % Assuming LEO, low orbit eccentricity
 
 % [degrees] Field-of-view angle 
-fov_angle = 2 * (180/pi) * asin(R_E/(R_E + sat_height) * cos(elevation_min_angle * (pi/180)));
+fov_angle = 180/pi * asin( R_E / (R_E + sat_height) * cos(elevation_min_angle * pi/180) );
 
-% FOV angle calculus from:
+% Calculus from:
 % "The Coverage Analysis for Low Earth Orbiting Satellites at Low Elevation"
 % Shkelzen Cakaj, Bexhet Kamo, Algenti Lala, Alban Rakipi
 % (IJACSA) International Journal of Advanced Computer Science and Applications, 214
 
-% Conical sensor
-sat_coverage = conicalSensor(sat, MaxViewAngle=fov_angle);
-sat_fov = fieldOfView(sat_coverage);
 
-
-
-%% Compute access to the satellite from ground station
-
-ac_sat_gs = access(sat, gs);  % Compute access to the satellite
-ac_sat_intervals = accessIntervals(ac_sat_gs);  % Access intervals from GS
-
-[ac_sat_plot_data, ac_sat_time] = accessStatus(ac_sat_gs);  % Plot the access intervals
-
-ac_sat_plot_data = double(ac_sat_plot_data);  % Casting for the operation below
-ac_sat_plot_data(ac_sat_plot_data == false) = NaN;  % Filter non-visibility intervals
-
-% Plot points in time where there is access to the satellite.
-figure();
-plot(ac_sat_time, ac_sat_plot_data, ' .');
-title("coverage intervals");
+%% Compute access to the satellite
+ac = access(sat, gs);
+acinterval = accessIntervals(ac)
 
 
 %% Simulation visualization
