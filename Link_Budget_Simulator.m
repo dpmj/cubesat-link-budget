@@ -1,11 +1,14 @@
 %% SATELLITE LINK BUDGET ANALYSIS
-% Juan Del Pino Mena - 2023
-% PLUTON UPV
-% NOTE: This program requires MatLab >= R2023a
-
-% Link budget estimator for LEO satellites. This script computes access intervals in a
-% given simulation time, the latency and Doppler frequency shift. Also estimates the
-% propagation and atmospheric losses, and provides a complete link budget.
+% Juan Del Pino Mena
+% October 2023
+% 
+% Link budget estimator for LEO satellites. Provides a complete link budget.
+% This script computes access intervals in a given simulation time, azimuth, elevation, 
+% range, latency, Doppler frequency shift, FSPL losses, atmospheric losses, received power
+% and CNR.
+%
+% REQUIREMENTS
+% This program requires MatLab >= R2023a and the satellite communications toolbox.
 
 
 close all;
@@ -18,9 +21,7 @@ clearvars;
 
 k_boltzmann = 1.380649e-23;  % [J/K] Boltzmann's constant
 T_0 = 290; % [K] room temperature for noise calculus, usually 290 K
-
-R_E = 6371;  % [km] Earth's average radius
-% Not for orbit propagation, but for auxiliary calculations.
+R_E = 6371;  % [km] Earth's average radius. (not for orbit propagation, only aux calc.)
 
 
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -54,7 +55,6 @@ rx_loss_gs_dB = 3;  % [dB] RX system power loss in the ground station
 % Noise 
 
 rx_nf_gs_dB = 3;  % [dB] System noise figure in RX in the ground station
-% rx_noise_temp_gs_K = (10^(rx_nf_gs_dB/10) - 1) * T_0;  % [K] Equiv. noise temp of GS rx
 
 ant_ambient_temp_gs_K = 290;  % [K] Antenna ambient temperature in the ground station
 ant_noise_temp_gs_K = 290;  % [K] Antenna noise temperature in the ground station
@@ -62,18 +62,9 @@ ant_noise_temp_gs_K = 290;  % [K] Antenna noise temperature in the ground statio
 % how much noise an antenna produces in a given environment. For uplink 290 K is 
 % considered as the worst case, and for downlink is 2340 K.
 
-% sys_temp_gs_K = rx_noise_temp_gs_K + ant_noise_temp_gs_K;  % [K] system equiv temp GS rx
-
-% rx_PN_gs_dB = 10 * log10(k_boltzmann * ant_noise_temp_K * bandwidth);
-% [dB] noise power at GS antenna
-
 % G/T (Gain-to-Noise-Temperature Ratio, GNTR) relates the receive antenna gain and the 
-% system noise temperature. system_noise_temp = antenna_noise_temp + receiver_noise_temp
-% If we are not measuring with an receiver then system_noise_temp = antenna_noise_temp
-% This is not a representative value for calculating G/T, since it relates to the receive 
-% performance of both antenna and receiver. 
-
-% G/T = GR − Nf − 10 * log10( T0 + (Ta − T0) * 10^(−0.1 * Nf) )
+% system noise temperature.
+% G/T = GR − Nf − 10 * log10( T0 + (Ta − T0) * 10 ^ (−0.1 * Nf) )
 % GR is the receive antenna gain in dBi
 % Nf is the noise figure in dB
 % T0 is the ambient temperature in degrees Kelvin
@@ -83,7 +74,13 @@ ant_noise_temp_gs_K = 290;  % [K] Antenna noise temperature in the ground statio
 rx_GNTR_gs_dB_K = tx_ant_gain_gs_dB - rx_nf_gs_dB - 10 * log10(ant_ambient_temp_gs_K + ...
     (ant_noise_temp_gs_K - ant_ambient_temp_gs_K) * 10^(-0.1 * rx_nf_gs_dB));  % [dB/K]
 
-% rx_EbNo_gs_dB = 0;  % [dB] Required Eb/No (Bit Energy over Noise Ratio) in GS rx 
+
+% --- OLD
+% rx_noise_temp_gs_K = (10^(rx_nf_gs_dB/10) - 1) * T_0;  % [K] Equiv. noise temp of GS rx
+% sys_temp_gs_K = rx_noise_temp_gs_K + ant_noise_temp_gs_K;  % [K] system equiv temp GS rx
+% rx_PN_gs_dB = 10 * log10(k_boltzmann * ant_noise_temp_K * bandwidth);
+% [dB] noise power at GS antenna
+% --- OLD
 
 
 % ----------------------------------------------------------------------------------------
@@ -101,18 +98,14 @@ rx_GNTR_sat_dB = 3;  % [dB] Gain-to-Noise-Temperature Ratio in the sat rx
 % Noise 
 
 rx_nf_sat_dB = 3;  % [dB] System noise figure in RX in the ground station
-% rx_noise_temp_sat_K = (10^(rx_nf_sat_dB/10) - 1) * T_0;  % [K] Equiv. noise temp of sat rx
 
 ant_ambient_temp_sat_K = 100;  % [K] Antenna ambient temperature in the satellite
 ant_noise_temp_sat_K = 2340;  % [K] Antenna noise temperature in the satellite
-% sys_temp_sat_K = rx_noise_temp_sat_K + ant_noise_temp_sat_K;  % [K] syst equiv temp sat rx
 
 % [dB/K] G/T in the sat rx
 rx_GNTR_sat_dB_K = tx_ant_gain_sat_dB - rx_nf_sat_dB ... 
     - 10 * log10(ant_ambient_temp_sat_K ...
     + (ant_noise_temp_sat_K - ant_ambient_temp_sat_K) * 10^(-0.1 * rx_nf_sat_dB)); 
-
-% rx_EbNo_sat_dB = 0;  % [dB] Required Eb/No (Bit Energy over Noise Ratio) in sat rx 
 
 
 % ----------------------------------------------------------------------------------------
@@ -160,7 +153,6 @@ sat_fov = fieldOfView(sat_coverage);
 
 
 
-
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Compute access to the satellite from ground station
 
@@ -182,7 +174,7 @@ title("Observation intervals: line-of-sight with $\varepsilon >= \varepsilon_{mi
 xlabel("Simulation Time", interpreter="latex");
 ylabel("Access status", interpreter="latex");
 ylim([-0.5, 1.5]);
-grid on;
+grid on; grid minor;
 
 
 
@@ -249,6 +241,50 @@ pattern(sat_transmitter, Size=1e5);  % Show radiation pattern in 3D viewer
 
 
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Azimuth, elevation and range between satellite and ground station
+
+% Compute azimuth, elevation, range
+[azimuth_sat_gs_deg, elevation_sat_gs_deg, range_sat_gs_m] = aer(sat, gs);  % [deg,deg,m]
+
+range_sat_gs_full_m = range_sat_gs_m;  % Save a copy of the complete vector for CNR calc.
+aer_sat_gs_time = ac_sat_time;  % time vector for plotting
+
+% Discard data when not in fov
+azimuth_sat_gs_deg(~logical(ac_sat_plot_data)) = NaN;  
+elevation_sat_gs_deg(~logical(ac_sat_plot_data)) = NaN;
+range_sat_gs_m(~logical(ac_sat_plot_data)) = NaN; 
+
+
+
+% ----------------------------------------------------------------------------------------
+% Plot
+
+figure;
+
+subplot(3, 1, 1);
+plot(aer_sat_gs_time, azimuth_sat_gs_deg); 
+grid on; grid minor;
+xlabel("Simulation time", interpreter="latex");
+ylabel("Azimuth (degrees)", interpreter="latex");
+title("Ground Station Azimuth", interpreter="latex");
+
+subplot(3, 1, 2);
+plot(aer_sat_gs_time, elevation_sat_gs_deg); 
+grid on; grid minor;
+xlabel("Simulation time", interpreter="latex");
+ylabel("Elevation (degrees)", interpreter="latex");
+title("Ground Station Elevation", interpreter="latex");
+
+subplot(3, 1, 3);
+plot(aer_sat_gs_time, range_sat_gs_m); 
+grid on; grid minor;
+xlabel("Simulation time", interpreter="latex");
+ylabel("Distance (m)", interpreter="latex");
+title("Range between GS and Sat", interpreter="latex");
+
+
+
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Latency and Doppler Shift
 % These functions are only available on MatLab R2023a onwards
 % Dynamic - computes latency and doppler shift over the complete simulation time
@@ -257,8 +293,11 @@ pattern(sat_transmitter, Size=1e5);  % Show radiation pattern in 3D viewer
 [doppler_fshift, doppler_time, doppler_info] = dopplershift(sat, gs, Frequency=freq_Hz);
 
 
+% ----------------------------------------------------------------------------------------
+% Plot
+
 figure();
-subplot(1, 2, 1);
+subplot(2, 1, 1);
 plot(latency_time, latency_delay(1, :) .* 1e3);  % in milliseconds
 xlim([latency_time(1), latency_time(end)]);
 title("Satellite Latency in observation time", interpreter="latex");
@@ -266,13 +305,13 @@ xlabel("Simulation Time", interpreter="latex");
 ylabel("Latency (ms)", interpreter="latex");
 grid on; grid minor;
 
-subplot(1, 2, 2);
+subplot(2, 1, 2);
 plot(doppler_time, doppler_fshift * 1e-3);  % kHz
 xlim([doppler_time(1), doppler_time(end)]);
 title("Doppler Shift in observation time", interpreter="latex");
 xlabel("Simulation Time", interpreter="latex");
 ylabel("Doppler Frequency Shift (kHz)", interpreter="latex");
-grid on;
+grid on; grid minor;
 
 
 
@@ -326,10 +365,12 @@ p618cfg = p618Config(...
     AntennaEfficiency = 0.5 ...  % [0-1] Antenna efficiency
 );
 
+
 % ----------------------------------------------------------------------------------------
 % Calculate Earth-space propagation losses, cross-polarization discrimination and sky 
 % noise temperature with the above configuration
-[p618_atm_loss, p618_xpol_discr, p618_temp_sky] = p618PropagationLosses(p618cfg);
+
+[p618_atm_loss_dB, p618_xpol_discr_dB, p618_temp_sky_K] = p618PropagationLosses(p618cfg);
 
 % p618_atm_loss.Ag - Gaseous attenuation (dB)
 % p618_atm_loss.Ac - Cloud and fog attenuation (dB)
@@ -340,59 +381,18 @@ p618cfg = p618Config(...
 %                    percentage of the RainAnnualExceedance.
 % p618_temp_sky    - Sky noise temperature (K) at the ground station antenna.
 
+
 % ----------------------------------------------------------------------------------------
 % Polarization loss
 
 p618_pol_loss = 3;  % [dB] Polarization loss. Worst-case: 3 dB
 
+
 % ----------------------------------------------------------------------------------------
 % Total losses
-p618_loss_total = p618_atm_loss.At + p618_pol_loss;
 
+p618_loss_total = p618_atm_loss_dB.At + p618_pol_loss;
 
-% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% CNR: Carrier-to-noise ratio for configured satellite link budget parameters
-% Static by default, but here is forced to be dynamic: loop computes CNR in every access=1
-% simulation point
-
-% ----------------------------------------------------------------------------------------
-% UPLINK: Ground Station -> Satellite 
-
-ul_CNR_cfg = satelliteCNRConfig(...
-    TransmitterPower = tx_power_gs_dBm - 30, ...  % [dBW] Transmit power 
-    TransmitterSystemLoss = tx_loss_gs_dB, ...  % [dB] Losses in the transmitter
-    TransmitterAntennaGain = tx_ant_gain_gs_dB, ...  % [dBi] Antenna gain
-    Distance = 1700, ...  % [km] Distance. Worst-case
-    Frequency = freq_Hz * 1e-9, ...  % [GHz] Center frequency
-    MiscellaneousLoss = p618_loss_total, ...  % [dB] Misc attenuation
-    GainToNoiseTemperatureRatio = rx_GNTR_sat_dB_K, ...  % [dB/K] G/T ratio
-    ReceiverSystemLoss = rx_loss_sat_dB, ...  % [dB] Receiver system loss
-    BitRate = bitrate_bps * 1e-6, ...  % [Mbps] Bit rate
-    SymbolRate = symbolrate_Sps * 1e-6, ...  % [MSps] Symbol rate
-    Bandwidth = bandwidth_Hz * 1e-6 ...  [MHz] Bandwidth
-);
-
-[ul_CNR, ul_CNR_info] = satelliteCNR(ul_CNR_cfg);
-
-
-% ----------------------------------------------------------------------------------------
-% DOWNLINK: Satellite -> Ground Station
-
-dl_CNR_cfg = satelliteCNRConfig(...
-    TransmitterPower = tx_power_sat_dBm - 30, ...  % [dBW] Transmit power 
-    TransmitterSystemLoss = tx_loss_sat_dB, ...  % [dB] Losses in the transmitter
-    TransmitterAntennaGain = tx_ant_gain_sat_dB, ...  % [dBi] Antenna gain
-    Distance = 1200, ...  % [km] Distance. Worst-case
-    Frequency = freq_Hz * 1e-9, ...  % [GHz] Center frequency
-    MiscellaneousLoss = p618_loss_total, ...  % [dB] Misc attenuation
-    GainToNoiseTemperatureRatio = rx_GNTR_gs_dB_K, ...  % [dB/K] G/T ratio
-    ReceiverSystemLoss = rx_loss_gs_dB, ...  % [dB] Receiver system loss
-    BitRate = bitrate_bps * 1e-6, ...  % [Mbps] Bit rate
-    SymbolRate = symbolrate_Sps * 1e-6, ...  % [MSps] Symbol rate
-    Bandwidth = bandwidth_Hz * 1e-6 ...  [MHz] Bandwidth
-);
-
-[dl_CNR, dl_CNR_info] = satelliteCNR(dl_CNR_cfg);
 
 
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -428,16 +428,17 @@ link_DL = link(sat_transmitter, gs_receiver);  % Perform downlink analysis
 
 % ----------------------------------------------------------------------------------------
 % Plot
+
 figure;
 
-subplot(1, 2, 1);
+subplot(2, 1, 1);
 plot(link_UL_time, link_UL_PRI_dBW + 30); 
 grid on; grid minor;
 xlabel("Simulation time", interpreter="latex");
 ylabel("Received signal strength (dBm)", interpreter="latex");
 title("Uplink", interpreter="latex");
 
-subplot(1, 2, 2);
+subplot(2, 1, 2);
 plot(link_DL_time, link_DL_PRI_dBW + 30); 
 grid on; grid minor;
 xlabel("Simulation time", interpreter="latex");
@@ -448,32 +449,85 @@ sgtitle("Received signal strength in uplink and downlink", interpreter="latex");
 
 
 
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% CNR: Carrier-to-noise ratio for configured satellite link budget parameters (SNR)
+% Static by default, forced to be dynamic (SNR computed in every simulation point)
+
+% ----------------------------------------------------------------------------------------
+% Computes CNR in every simulation point
+
+N_points_sim = length(ac_sat_plot_data);
+
+ul_CNR = zeros(N_points_sim, 1);
+dl_CNR = zeros(N_points_sim, 1);
+% ul_CNR_info = zeros(N_points_sim, 1);  % Cannot allocate due to type not being double
+% dl_CNR_info = zeros(N_points_sim, 1);
+
+for i = 1:1:N_points_sim
+
+    % UPLINK: Ground Station -> Satellite
+    ul_CNR_cfg = satelliteCNRConfig(...
+        TransmitterPower = tx_power_gs_dBm - 30, ...  % [dBW] Transmit power 
+        TransmitterSystemLoss = tx_loss_gs_dB, ...  % [dB] Losses in the transmitter
+        TransmitterAntennaGain = tx_ant_gain_gs_dB, ...  % [dBi] Antenna gain
+        Distance = range_sat_gs_full_m(i) * 1e-3, ...  % [km] Distance. Varies.
+        Frequency = freq_Hz * 1e-9, ...  % [GHz] Center frequency
+        MiscellaneousLoss = p618_loss_total, ...  % [dB] Misc attenuation
+        GainToNoiseTemperatureRatio = rx_GNTR_sat_dB_K, ...  % [dB/K] G/T ratio
+        ReceiverSystemLoss = rx_loss_sat_dB, ...  % [dB] Receiver system loss
+        BitRate = bitrate_bps * 1e-6, ...  % [Mbps] Bit rate
+        SymbolRate = symbolrate_Sps * 1e-6, ...  % [MSps] Symbol rate
+        Bandwidth = bandwidth_Hz * 1e-6 ...  % [MHz] Bandwidth
+    );
+    % [ul_CNR(i), ul_CNR_info(i)] = satelliteCNR(ul_CNR_cfg);
+    [ul_CNR(i), ~] = satelliteCNR(ul_CNR_cfg);
+    
+    % DOWNLINK: Satellite -> Ground Station
+    dl_CNR_cfg = satelliteCNRConfig(...
+        TransmitterPower = tx_power_sat_dBm - 30, ...  % [dBW] Transmit power 
+        TransmitterSystemLoss = tx_loss_sat_dB, ...  % [dB] Losses in the transmitter
+        TransmitterAntennaGain = tx_ant_gain_sat_dB, ...  % [dBi] Antenna gain
+        Distance = range_sat_gs_full_m(i) * 1e-3, ...  % [km] Distance. Varies.
+        Frequency = freq_Hz * 1e-9, ...  % [GHz] Center frequency
+        MiscellaneousLoss = p618_loss_total, ...  % [dB] Misc attenuation
+        GainToNoiseTemperatureRatio = rx_GNTR_gs_dB_K, ...  % [dB/K] G/T ratio
+        ReceiverSystemLoss = rx_loss_gs_dB, ...  % [dB] Receiver system loss
+        BitRate = bitrate_bps * 1e-6, ...  % [Mbps] Bit rate
+        SymbolRate = symbolrate_Sps * 1e-6, ...  % [MSps] Symbol rate
+        Bandwidth = bandwidth_Hz * 1e-6 ...  % [MHz] Bandwidth
+    );
+    % [dl_CNR(i), dl_CNR_info(i)] = satelliteCNR(dl_CNR_cfg);
+    [dl_CNR(i), ~] = satelliteCNR(dl_CNR_cfg);
+
+end
+
+% Filter data out of fov
+ul_CNR(~logical(ac_sat_plot_data)) = NaN;
+dl_CNR(~logical(ac_sat_plot_data)) = NaN;
+
+cnr_time = ac_sat_time;  % time vector for plotting
+
+
+% ----------------------------------------------------------------------------------------
 % Plot
-% figure;
-% 
-% subplot(1, 2, 1);
-% plot(link_UL_time, link_UL_EbNo_dB); 
-% hold on;
-% plot(link_UL_time, link_UL_SNR_dB);
-% grid on; grid minor;
-% xlabel("Simulation time");
-% ylabel("Received Eb/No or SNR (dB)");
-% title("Uplink");
-% legend("$E_b/N_o$", "SNR", interpreter="latex");
-% 
-% subplot(1, 2, 2);
-% plot(link_DL_time, link_DL_EbNo_dB); 
-% hold on;
-% plot(link_DL_time, link_DL_SNR_dB);
-% grid on; grid minor;
-% xlabel("Simulation time");
-% ylabel("Received Eb/No or SNR (dB)");
-% title("Downlink");
-% legend("$E_b/N_o$", "SNR", interpreter="latex");
-% 
-% sgtitle("$E_b/N_o$ and SNR in uplink and downlink", interpreter="latex");
 
+figure;
 
+subplot(2, 1, 1);
+plot(cnr_time, ul_CNR); 
+grid on; grid minor;
+xlabel("Simulation time", interpreter="latex");
+ylabel("Carrier-to-Noise Ratio (dB)", interpreter="latex");
+title("Uplink", interpreter="latex");
+
+subplot(2, 1, 2);
+plot(cnr_time, dl_CNR); 
+grid on; grid minor;
+xlabel("Simulation time", interpreter="latex");
+ylabel("Carrier-to-Noise Ratio (dB)", interpreter="latex");
+title("Downlink", interpreter="latex");
+
+sgtitle("Carrier-to-Noise Ratio (CNR) in uplink and downlink", interpreter="latex");
 
 
 
@@ -487,11 +541,5 @@ sgtitle("Received signal strength in uplink and downlink", interpreter="latex");
 % show(sat);  % Show satellite
 % 
 % play(scenario);  % Show scenario, play it
-
-
-
-
-
-
 
 
