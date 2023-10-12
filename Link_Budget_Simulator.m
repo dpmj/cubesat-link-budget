@@ -1,6 +1,6 @@
 %% SATELLITE LINK BUDGET ANALYSIS
 % Juan Del Pino Mena
-% October 2023
+% Version 1 - October 2023
 % 
 % Link budget estimator for LEO satellites. Provides a complete link budget.
 % This script computes access intervals in a given simulation time, azimuth, elevation, 
@@ -13,6 +13,12 @@
 
 close all;
 clearvars;
+
+
+% %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Script config
+
+show3Dviewer = false;
 
 
 
@@ -28,12 +34,22 @@ R_E = 6371;  % [km] Earth's average radius. (not for orbit propagation, only aux
 %% Configuration parameters
 
 % ----------------------------------------------------------------------------------------
-% Transmission and reception parameters
+% Common transmission parameters
 
-freq_Hz = 433e6;  % [Hz] Transmission frequency 
-bitrate_bps = 300;  % [b/s] Transmission bitrate
+freq_Hz = 434e6;  % [Hz] Transmission frequency 
+bitrate_bps = 293;  % [b/s] Transmission bitrate
 symbolrate_Sps = 1/0.032768;  % [Sps] Symbol rate (LoRa: Ts = 2^SF / BW)
 bandwidth_Hz = 125e3;  % [Hz] Transmission bandwidth
+
+
+% ----------------------------------------------------------------------------------------
+% Transceiver limits (only used for plots)
+
+rx_limit_sensitivity_gs = -137;  % [dBm] The minimum admitted signal power in the gs
+rx_limit_cnr_gs = -20;  % [dB] The minimum SNR / CNR the gs transceiver admits 
+
+rx_limit_sensitivity_sat = -137;  % [dBm] The minimum admitted signal power in the sat
+rx_limit_cnr_sat = -20;  % [dB] The minimum SNR / CNR the sat transceiver admits
 
 
 % ----------------------------------------------------------------------------------------
@@ -99,7 +115,7 @@ rx_GNTR_sat_dB = 3;  % [dB] Gain-to-Noise-Temperature Ratio in the sat rx
 
 rx_nf_sat_dB = 3;  % [dB] System noise figure in RX in the ground station
 
-ant_ambient_temp_sat_K = 100;  % [K] Antenna ambient temperature in the satellite
+ant_ambient_temp_sat_K = 290;  % [K] Antenna ambient temperature in the satellite
 ant_noise_temp_sat_K = 2340;  % [K] Antenna noise temperature in the satellite
 
 % [dB/K] G/T in the sat rx
@@ -154,7 +170,7 @@ sat_fov = fieldOfView(sat_coverage);
 
 
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Compute access to the satellite from ground station
+%% Compute access to the satellite from the ground station
 
 ac_sat_gs = access(sat, gs);  % Compute access to the satellite
 ac_sat_intervals = accessIntervals(ac_sat_gs);  % Access intervals from GS
@@ -162,7 +178,16 @@ ac_sat_intervals = accessIntervals(ac_sat_gs);  % Access intervals from GS
 [ac_sat_plot_data, ac_sat_time] = accessStatus(ac_sat_gs);  % Plot the access intervals
 
 ac_sat_plot_data = double(ac_sat_plot_data);  % Casting for the operation below
-% ac_sat_plot_data(ac_sat_plot_data == 0) = NaN;  % Filter non-visibility intervals
+% ac_sat_plot_data(ac_sat_plot_data == 0) = NaN;  % Filter out of sight intervals
+
+
+% ----------------------------------------------------------------------------------------
+% Output
+
+fprintf("\n-----------------------------------------\n" + ...
+    "ACCESS INTERVALS:\n\n");
+disp(ac_sat_intervals);
+
 
 % ----------------------------------------------------------------------------------------
 % Plot points in time where there is access to the satellite.
@@ -182,7 +207,7 @@ grid on; grid minor;
 %% Add TX and RX to the satellite and the Ground Station
 
 % ----------------------------------------------------------------------------------------
-% Ground Station
+% Ground Station transceivers
 
 gs_antenna = arrayConfig(Size=[1, 1]);  % Isotropic antenna element from phasedArray T.Box
 
@@ -211,7 +236,7 @@ pattern(gs_receiver, freq_Hz, Size=1e5);  % Show radiation pattern in 3D viewer
 
 
 % ----------------------------------------------------------------------------------------
-% Satellite
+% Satellite transceivers
 
 sat_antenna = arrayConfig(Size=[1, 1]);  % Isotropic antenna 
 
@@ -244,20 +269,19 @@ pattern(sat_transmitter, Size=1e5);  % Show radiation pattern in 3D viewer
 %% Azimuth, elevation and range between satellite and ground station
 
 % Compute azimuth, elevation, range
-[azimuth_sat_gs_deg, elevation_sat_gs_deg, range_sat_gs_m] = aer(sat, gs);  % [deg,deg,m]
+[azimuth_sat_gs_deg, elevation_sat_gs_deg, range_sat_gs_m] = aer(gs, sat);  % [deg,deg,m]
 
 range_sat_gs_full_m = range_sat_gs_m;  % Save a copy of the complete vector for CNR calc.
 aer_sat_gs_time = ac_sat_time;  % time vector for plotting
 
-% Discard data when not in fov
+% Discard data when not in line of sight
 azimuth_sat_gs_deg(~logical(ac_sat_plot_data)) = NaN;  
 elevation_sat_gs_deg(~logical(ac_sat_plot_data)) = NaN;
 range_sat_gs_m(~logical(ac_sat_plot_data)) = NaN; 
 
 
-
 % ----------------------------------------------------------------------------------------
-% Plot
+% Plot azimuth, elevation, range
 
 figure;
 
@@ -372,14 +396,14 @@ p618cfg = p618Config(...
 
 [p618_atm_loss_dB, p618_xpol_discr_dB, p618_temp_sky_K] = p618PropagationLosses(p618cfg);
 
-% p618_atm_loss.Ag - Gaseous attenuation (dB)
-% p618_atm_loss.Ac - Cloud and fog attenuation (dB)
-% p618_atm_loss.Ar - Rain attenuation (dB)
-% p618_atm_loss.As - Attenuation due to tropospheric scintillation (dB)
-% p618_atm_loss.At - Total atmospheric attenuation (dB)
-% p618_xpol_discr  - Cross-polarization discrimination (dB) not exceeded for the 
+% p618_atm_loss_dB.Ag - Gaseous attenuation (dB)
+% p618_atm_loss_dB.Ac - Cloud and fog attenuation (dB)
+% p618_atm_loss_dB.Ar - Rain attenuation (dB)
+% p618_atm_loss_dB.As - Attenuation due to tropospheric scintillation (dB)
+% p618_atm_loss_dB.At - Total atmospheric attenuation (dB)
+% p618_xpol_discr_dB  - Cross-polarization discrimination (dB) not exceeded for the 
 %                    percentage of the RainAnnualExceedance.
-% p618_temp_sky    - Sky noise temperature (K) at the ground station antenna.
+% p618_temp_sky_K     - Sky noise temperature (K) at the ground station antenna.
 
 
 % ----------------------------------------------------------------------------------------
@@ -394,36 +418,52 @@ p618_pol_loss = 3;  % [dB] Polarization loss. Worst-case: 3 dB
 p618_loss_total = p618_atm_loss_dB.At + p618_pol_loss;
 
 
+% ----------------------------------------------------------------------------------------
+% Output
+
+fprintf("\n\n-----------------------------------------\nATMOSPHERIC LOSSES:\n");
+fprintf("\nGaseous attenuation = %.3f dB", p618_atm_loss_dB.Ag);
+fprintf("\nCloud and fog attenuation = %.3f dB", p618_atm_loss_dB.Ac);
+fprintf("\nRain attenuation = %.3f dB", p618_atm_loss_dB.Ar);
+fprintf("\nAttenuation due to tropospheric scintillation = %.3f dB", p618_atm_loss_dB.As);
+fprintf("\nTotal atmospheric attenuation = %.3f dB", p618_atm_loss_dB.At);
+fprintf("\nCross-polarization discrimination = %.3f dB", p618_xpol_discr_dB);
+fprintf("\nSky noise temperature = %.3f K", p618_temp_sky_K);
+fprintf("\nPolarization loss (MANUAL PICK) = %.3f dB", p618_pol_loss);
+fprintf("\nTOTAL LOSSES = Total att. + Pol. loss = %.3f dB\n\n", p618_loss_total);
+
+
 
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Link budget analysis: Received Power
 
 % EIRP: Equivalent Isotropic Radiated Power: EIRP = P_tx + G_ant_tx
-% PISO: Received isotropic power in the antenna: PISO_rx = EIRP_tx - FSPL 
-% PRI:  Received power at receiver input: PRI_rx = EIRP_tx - FSPL + G_ant_rx - Pre_rx_loss
-%       This value is more interesting than PISO
 % Pre_rx_loss: Total loss before the receiver input in the receiver system. Sum of feeder 
 %              loss, radome loss, loss due to polarization mismatch, etc.
+
+% PISO: Received isotropic power in the antenna: PISO_rx = EIRP - FSPL 
+% PRI:  Received power at receiver input: PRI_rx = EIRP_tx - FSPL + G_ant_rx - Pre_rx_loss
+
+% The PRI result is the most interesting. But since the PRI does not account for the p618
+% losses, we will substract them from the received power
 
 
 % ----------------------------------------------------------------------------------------
 % Uplink
 
-link_UL = link(gs_transmitter, sat_receiver);  % Perform uplink analysis
-
+link_UL = link(gs_transmitter, sat_receiver);  % Create link
 [link_UL_PISO_dBW, link_UL_PRI_dBW, link_UL_time] = sigstrength(link_UL);  % Signal power
-% [link_UL_EbNo_dB, link_UL_time] = ebno(link_UL);  % EbNo
-% link_UL_SNR_dB = link_UL_EbNo_dB + 10 * log10(bitrate / bandwidth);  % SNR?
+
+link_UL_rxpower_dBm = link_UL_PRI_dBW + 30 - p618_loss_total;  % [dBm] UL received power
 
 
 % ----------------------------------------------------------------------------------------
 % Downlink
 
-link_DL = link(sat_transmitter, gs_receiver);  % Perform downlink analysis
-
+link_DL = link(sat_transmitter, gs_receiver);  % Create link
 [link_DL_PISO_dBW, link_DL_PRI_dBW, link_DL_time] = sigstrength(link_UL);  % Signal power 
-% [link_DL_EbNo_dB, link_DL_time] = ebno(link_DL);    % EbNo
-% link_DL_SNR_dB = link_DL_EbNo_dB + 10 * log10(bitrate / bandwidth);  % SNR?
+
+link_DL_rxpower_dBm = link_DL_PRI_dBW + 30 - p618_loss_total;  % [dBm] DL received power
 
 
 % ----------------------------------------------------------------------------------------
@@ -432,18 +472,20 @@ link_DL = link(sat_transmitter, gs_receiver);  % Perform downlink analysis
 figure;
 
 subplot(2, 1, 1);
-plot(link_UL_time, link_UL_PRI_dBW + 30); 
+plot(link_UL_time, link_UL_rxpower_dBm); 
 grid on; grid minor;
 xlabel("Simulation time", interpreter="latex");
 ylabel("Received signal strength (dBm)", interpreter="latex");
 title("Uplink", interpreter="latex");
+yline(rx_limit_sensitivity_sat, Color="#5e5e5e", LineStyle="--", Label="Sat sensitivity");
 
 subplot(2, 1, 2);
-plot(link_DL_time, link_DL_PRI_dBW + 30); 
+plot(link_DL_time, link_DL_rxpower_dBm); 
 grid on; grid minor;
 xlabel("Simulation time", interpreter="latex");
 ylabel("Received signal strength (dBm)", interpreter="latex");
 title("Downlink", interpreter="latex");
+yline(rx_limit_sensitivity_gs, Color="#5e5e5e", LineStyle="--", Label="GS sensitivity");
 
 sgtitle("Received signal strength in uplink and downlink", interpreter="latex");
 
@@ -473,7 +515,7 @@ for i = 1:1:N_points_sim
         Distance = range_sat_gs_full_m(i) * 1e-3, ...  % [km] Distance. Varies.
         Frequency = freq_Hz * 1e-9, ...  % [GHz] Center frequency
         MiscellaneousLoss = p618_loss_total, ...  % [dB] Misc attenuation
-        GainToNoiseTemperatureRatio = rx_GNTR_sat_dB_K, ...  % [dB/K] G/T ratio
+        GainToNoiseTemperatureRatio = rx_GNTR_sat_dB_K, ...  % [dB/K] Receiver G/T ratio
         ReceiverSystemLoss = rx_loss_sat_dB, ...  % [dB] Receiver system loss
         BitRate = bitrate_bps * 1e-6, ...  % [Mbps] Bit rate
         SymbolRate = symbolrate_Sps * 1e-6, ...  % [MSps] Symbol rate
@@ -490,7 +532,7 @@ for i = 1:1:N_points_sim
         Distance = range_sat_gs_full_m(i) * 1e-3, ...  % [km] Distance. Varies.
         Frequency = freq_Hz * 1e-9, ...  % [GHz] Center frequency
         MiscellaneousLoss = p618_loss_total, ...  % [dB] Misc attenuation
-        GainToNoiseTemperatureRatio = rx_GNTR_gs_dB_K, ...  % [dB/K] G/T ratio
+        GainToNoiseTemperatureRatio = rx_GNTR_gs_dB_K, ...  % [dB/K] Receiver G/T ratio
         ReceiverSystemLoss = rx_loss_gs_dB, ...  % [dB] Receiver system loss
         BitRate = bitrate_bps * 1e-6, ...  % [Mbps] Bit rate
         SymbolRate = symbolrate_Sps * 1e-6, ...  % [MSps] Symbol rate
@@ -501,7 +543,7 @@ for i = 1:1:N_points_sim
 
 end
 
-% Filter data out of fov
+% Filter data out of line of sight
 ul_CNR(~logical(ac_sat_plot_data)) = NaN;
 dl_CNR(~logical(ac_sat_plot_data)) = NaN;
 
@@ -519,6 +561,7 @@ grid on; grid minor;
 xlabel("Simulation time", interpreter="latex");
 ylabel("Carrier-to-Noise Ratio (dB)", interpreter="latex");
 title("Uplink", interpreter="latex");
+yline(rx_limit_cnr_sat, Color="#5e5e5e", LineStyle="--", Label="Sat CNR limit");
 
 subplot(2, 1, 2);
 plot(cnr_time, dl_CNR); 
@@ -526,6 +569,7 @@ grid on; grid minor;
 xlabel("Simulation time", interpreter="latex");
 ylabel("Carrier-to-Noise Ratio (dB)", interpreter="latex");
 title("Downlink", interpreter="latex");
+yline(rx_limit_cnr_sat, Color="#5e5e5e", LineStyle="--", Label="GS CNR limit");
 
 sgtitle("Carrier-to-Noise Ratio (CNR) in uplink and downlink", interpreter="latex");
 
@@ -533,13 +577,18 @@ sgtitle("Carrier-to-Noise Ratio (CNR) in uplink and downlink", interpreter="late
 
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Simulation 3D visualization
+% This representation consumes time and their windows can be an annoyance.
 
-% v = satelliteScenarioViewer(scenario, ShowDetails=true);
-% sat.ShowLabel = true;
-% gs.ShowLabel = true;
-% 
-% show(sat);  % Show satellite
-% 
-% play(scenario);  % Show scenario, play it
+if show3Dviewer == true  % only if requested
+
+    v = satelliteScenarioViewer(scenario, ShowDetails=true);
+    sat.ShowLabel = true;
+    gs.ShowLabel = true;
+    
+    show(sat);  % Show satellite
+    
+    play(scenario);  % Show scenario, play it
+
+end
 
 
