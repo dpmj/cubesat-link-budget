@@ -1,14 +1,12 @@
 %% SATELLITE LINK BUDGET ANALYSIS
 % Juan Del Pino Mena
-% Version 1 - October 2023
+% Version 0
+% 
+% PLUTON UPV
 % 
 % Graphically calculates the received power and SNR by minimum elevation angle. Considers
 % only the worst case scenario (minimum elevation, maximum distances).
 % This uses a simple FSPL model and a circular orbit
-%
-% REQUIREMENTS
-% This program requires MatLab >= R2023a and the satellite communications toolbox.
-
 
 close all;
 clearvars;
@@ -46,8 +44,8 @@ G_sat = 0;  % [dBi] Satellite antenna gain
 G_gs = 0;  % [dBi] Ground Station antenna gain
 
 % Noise in the antennas
-noise_temp_ant_gs_K = 290;  % [K] For uplink 290 K is considered as the worst case
-noise_temp_ant_sat_K = 2340; % [K] For downlink 2340 K for an electromagnetically busy area
+noise_temp_ant_ul_K = 290;  % [K] For uplink 290 K is considered as the worst case
+noise_temp_ant_dl_K = 2340; % [K] For downlink 2340 K for an electromagnetically busy area
 
 
 % Losses
@@ -63,7 +61,7 @@ loss_insertion_dB = 1;  % [dB] Insertion losses
 
 
 % Elevation angle sweep setup
-min_elevation_degree = 0:0.1:89;  % [degrees]
+min_elevation_degree = 0:0.5:89;  % [degrees]
 min_elevation_rad = (pi / 180) .* min_elevation_degree;  % [rads]
 
 
@@ -135,43 +133,43 @@ grid on; grid minor;
 
 %% SNR
 
-N_gs_dBm = 10*log10(BW * k_B * noise_temp_ant_gs_K) + 30;  % [dBm] Noise power in gs
-N_sat_dBm = 10*log10(BW * k_B * noise_temp_ant_sat_K) + 30;  % [dBm] Noise power in sat
+N_ul_dBm = 10*log10(BW * k_B * noise_temp_ant_ul_K) + 30;  % [dBm] Noise power in uplink
+N_dl_dBm = 10*log10(BW * k_B * noise_temp_ant_dl_K) + 30;  % [dBm] Noise power in downlink
 
-SNR_gs_dB = P_rx_dBm - N_gs_dBm;  % [dB] Ground Station SNR
-SNR_sat_dB = P_rx_dBm - N_sat_dBm;  % [dB] Satellite SNR
+SNR_ul_dB = P_rx_dBm - N_ul_dBm;  % [dB] Uplink SNR
+SNR_dl_dB = P_rx_dBm - N_dl_dBm;  % [dB] Downlink SNR
 
 
 % Distinguish between the angles that comply and the ones which do not
 
-SNR_gs_good = SNR_gs_dB(SNR_gs_dB >= SNR_limit_dBm);
-SNR_gs_min_elevation_good = min_elevation_degree(SNR_gs_dB >= SNR_limit_dBm);
-SNR_gs_bad = SNR_gs_dB(SNR_gs_dB < SNR_limit_dBm);
-SNR_gs_min_elevation_bad = min_elevation_degree(SNR_gs_dB < SNR_limit_dBm);
+SNR_ul_good = SNR_ul_dB(SNR_ul_dB >= SNR_limit_dBm);
+SNR_ul_min_elevation_good = min_elevation_degree(SNR_ul_dB >= SNR_limit_dBm);
+SNR_ul_bad = SNR_ul_dB(SNR_ul_dB < SNR_limit_dBm);
+SNR_ul_min_elevation_bad = min_elevation_degree(SNR_ul_dB < SNR_limit_dBm);
 
-SNR_sat_good = SNR_sat_dB(SNR_sat_dB >= SNR_limit_dBm);
-SNR_sat_min_elevation_good = min_elevation_degree(SNR_sat_dB >= SNR_limit_dBm);
-SNR_sat_bad = SNR_sat_dB(SNR_sat_dB < SNR_limit_dBm);
-SNR_sat_min_elevation_bad = min_elevation_degree(SNR_sat_dB < SNR_limit_dBm);
+SNR_dl_good = SNR_dl_dB(SNR_dl_dB >= SNR_limit_dBm);
+SNR_dl_min_elevation_good = min_elevation_degree(SNR_dl_dB >= SNR_limit_dBm);
+SNR_dl_bad = SNR_dl_dB(SNR_dl_dB < SNR_limit_dBm);
+SNR_dl_min_elevation_bad = min_elevation_degree(SNR_dl_dB < SNR_limit_dBm);
 
 
 figure();
 subplot(1,2,1);
-plot(SNR_gs_min_elevation_bad, SNR_gs_bad, '-r');
+plot(SNR_ul_min_elevation_bad, SNR_ul_bad, '-r');
 hold on;
-plot(SNR_gs_min_elevation_good, SNR_gs_good, '-g');
+plot(SNR_ul_min_elevation_good, SNR_ul_good, '-g');
 yline(SNR_limit_dBm, "--", sprintf("SNR limit: %d dB", SNR_limit_dBm));
-title("SNR at ground station receiver, as a function of elevation angle");
+title("Uplink SNR as a function of elevation angle");
 xlabel("Minimum elevation degree (º)");
 ylabel("SNR at receiver (dB)");
 grid on; grid minor;
 
 subplot(1,2,2);
-plot(SNR_sat_min_elevation_bad, SNR_sat_bad, '-r');
+plot(SNR_dl_min_elevation_bad, SNR_dl_bad, '-r');
 hold on;
-plot(SNR_sat_min_elevation_good, SNR_sat_good, '-g');
+plot(SNR_dl_min_elevation_good, SNR_dl_good, '-g');
 yline(SNR_limit_dBm, "--", sprintf("SNR limit: %d dB", SNR_limit_dBm));
-title("SNR at satellite receiver, as a function of elevation angle");
+title("Downlink SNR as a function of elevation angle");
 xlabel("Minimum elevation degree (º)");
 ylabel("SNR at receiver (dB)");
 grid on; grid minor;
@@ -182,15 +180,6 @@ grid on; grid minor;
 
 
 
-figure();
-plot(SNR_sat_min_elevation_bad, SNR_sat_bad, LineStyle="-", Color="#d91a1a");
-hold on;
-plot(SNR_sat_min_elevation_good, SNR_sat_good, LineStyle="-", Color="#1ad91a");
-yline(SNR_limit_dBm, "--", sprintf("SNR limit: %d dB", SNR_limit_dBm));
-title("SNR at satellite receiver, as a function of elevation angle");
-xlabel("Minimum elevation degree (º)");
-ylabel("SNR at receiver (dB)");
-grid on; grid minor;
 
 
 

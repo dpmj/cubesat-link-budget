@@ -1,9 +1,12 @@
-%% SATELLITE LINK BUDGET ANALYSIS - STANDALONE SCRIPT
+function [output] = link_budget_sim_func(config)
+%LINK_BUDGET_SIM_FUNC Computes the link budget calculations given a configuration
+
+%% SATELLITE LINK BUDGET ANALYSIS - Function
 % Juan Del Pino Mena
-% Version 2, December 2023
+% Version 1, December 2023
 % 
 % Link budget estimator for LEO satellites. Provides a complete link budget.
-% This script computes access intervals in a given simulation time, azimuth, elevation, 
+% This function computes access intervals in a given simulation time, azimuth, elevation, 
 % range, latency, Doppler frequency shift, FSPL losses, atmospheric losses, received power
 % and CNR.
 %
@@ -12,84 +15,143 @@
 %
 % CHANGELOG
 %
-% Version 2: Renamed to "standalone" to differenciate between script and function. Solved 
-% a bug in the downlink signal strength calculus.
-%
-% Version 1: First iteration. High-level link budget calculations, Configuration, 3D 
-% viewer, access, azimuth, elevation, range, latency, doppler, p618 losses, signal 
-% strength, CNR
+% Version 1: First iteration forked from Link_Budget_Simulator.m version 2. 
+% Standardization of input config object and output results object.
 
 
-close all;
-clearvars;
+%% CONFIGURATION OBJECT STRUCTURE
+% The configuration object must comply with this structure
+
+% simulation -----------------------------------------------------------------------------
+
+% config.sim.startTime      % [datetime object] Simulation start time
+% config.sim.stopTime       % [datetime object] Simulation stop time
+% config.sim.sampleTime     % [s] Simulation step, sample time in seconds
+
+% general communication parameters -------------------------------------------------------
+
+% config.comms.freq_Hz          % [Hz] Transmission center frequency
+% config.comms.bitrate_bps      % [bps] Transmission bitrate
+% config.comms.symbolrate_Sps   % [Sps] Symbol rate
+% config.comms.bandwidth_Hz     % [Hz] Transmission bandwidth
+
+% ground station -------------------------------------------------------------------------
+
+% config.gs.name                        % [string] Name of the ground station
+% config.gs.lat_N_deg                   % [deg] latitude
+% config.gs.lon_E_deg                   % [deg] longitude
+% config.gs.altitude_m                  % [m] altitude
+% config.gs.elevation_min_angle_deg     % [deg] minimum elevation angle
+
+% config.gs.ant.gain_dBi            % [dBi] Antenna Gain in the ground station
+% config.gs.ant.ambient_temp_K      % [dBi] Antenna Gain in the ground station
+% config.gs.ant.noise_temp_K        % [dBi] Antenna Gain in the ground station
+
+% config.gs.rx.loss_dB              % [dB] RX system power loss in the ground station
+% config.gs.rx.nf_dB                % [dB] RX system noise figure in the ground station
+
+% config.gs.tx.power_dBm    % [dBm] Transmission power in the Ground Station tx
+% config.gs.tx.loss_dB      % [dB] TX system power loss in the ground station
+
+% satellite ------------------------------------------------------------------------------
+
+% config.sat.tle_file               % [string] path to the satellite's TLE file
+
+% config.sat.ant.gain_dBi           % [dBi] Antenna Gain in the ground station
+% config.sat.ant.ambient_temp_K     % [dBi] Antenna Gain in the ground station
+% config.sat.ant.noise_temp_K       % [dBi] Antenna Gain in the ground station
+
+% config.sat.rx.loss_dB             % [dB] RX system power loss in the ground station
+% config.sat.rx.nf_dB               % [dB] RX system noise figure in the ground station
+
+% config.sat.tx.power_dBm    % [dBm] Transmission power in the Ground Station tx
+% config.sat.tx.loss_dB      % [dB] TX system power loss in the ground station
+
+% p618 model -----------------------------------------------------------------------------
+
+% config.p618.GasAnnualExceedance   % Average annual time percentage of excess for gas att
+% config.p618.CloudAnnualExceedance % Avg annual time percentage of excess for cloud att
+% config.p618.RainAnnualExceedance  % Avg annual time percentage of excess for rain att
+% config.p618.ScintillationAnnualExceedance % Avg annual time % of excess scintillation
+% config.p618.TotalAnnualExceedance % Avg annual time % of excess for total att
+% config.p618.PolarizationTiltAngle % [degrees, -90 to 90]  Polarization tilt angle
+% config.p618.AntennaDiameter       % [m] Physical diameter of the antenna. Default = 1 m
+% config.p618.AntennaEfficiency     % [0-1] Antenna efficiency
+% config.p618.PolLoss_dB            % [dB] Polarization loss. Worst-case: 3 dB
+
+% ----------------------------------------------------------------------------------------
 
 
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Script config
 
-show3Dviewer = false;
+% UNUSED IN FUNCTION ---------------------------------------------------------------------
+% show3Dviewer = false;
 
 
 
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Constants
 
-k_boltzmann = 1.380649e-23;  % [J/K] Boltzmann's constant
-T_0 = 290; % [K] room temperature for noise calculus, usually 290 K
-R_E = 6371;  % [km] Earth's average radius. (not for orbit propagation, only aux calc.)
+% UNUSED IN FUNCTION ---------------------------------------------------------------------
+% k_boltzmann = 1.380649e-23;  % [J/K] Boltzmann's constant
+% T_0 = 290; % [K] room temperature for noise calculus, usually 290 K
+% R_E = 6371;  % [km] Earth's average radius. (not for orbit propagation, only aux calc.)
+
 
 
 % %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Configuration parameters
+% Unpack input configuration object into variables
 
 % ----------------------------------------------------------------------------------------
 % Common transmission parameters
 
-freq_Hz = 434e6;  % [Hz] Transmission frequency 
-bitrate_bps = 293;  % [b/s] Transmission bitrate
-symbolrate_Sps = 1/0.032768;  % [Sps] Symbol rate (LoRa: Ts = 2^SF / BW)
-bandwidth_Hz = 125e3;  % [Hz] Transmission bandwidth
+freq_Hz = config.comms.freq_Hz;  % [Hz] Transmission frequency 
+bitrate_bps = config.comms.bitrate_bps;  % [b/s] Transmission bitrate
+symbolrate_Sps = config.comms.symbolrate_Sps;  % [Sps] Symbol rate
+bandwidth_Hz = config.comms.bandwidth_Hz;  % [Hz] Transmission bandwidth
 
 
 % ----------------------------------------------------------------------------------------
 % Transceiver limits (only used for plots)
 
-rx_limit_sensitivity_gs = -137;  % [dBm] The minimum admitted signal power in the gs
-rx_limit_cnr_gs = -20;  % [dB] The minimum SNR / CNR the gs transceiver admits 
-
-rx_limit_sensitivity_sat = -137;  % [dBm] The minimum admitted signal power in the sat
-rx_limit_cnr_sat = -20;  % [dB] The minimum SNR / CNR the sat transceiver admits
+% rx_limit_sensitivity_gs = config.gs.rx.limit_sensitivity;  % [dBm] The minimum admitted signal power in the gs
+% rx_limit_cnr_gs = config.gs.rx.limit_cnr_dB;  % [dB] The minimum SNR / CNR the gs transceiver admits
+% 
+% rx_limit_sensitivity_sat = config.sat.rx.limit_sensitivity;  % [dBm] The minimum admitted signal power in the sat
+% rx_limit_cnr_sat = config.sat.rx.limit_cnr_dB;  % [dB] The minimum SNR / CNR the sat transceiver admits
 
 
 % ----------------------------------------------------------------------------------------
 % Ground Station
 
-gs_name = "UPV GS";
-gs_lat_N = 39.47943;  % North latitude
-gs_lon_E = -0.34230;  % East longitude
-gs_altitude = 50;  % [m] Altitude of the GS
-elevation_min_angle = 12;  % [degrees] Minimum angle of elevation in GS
+gs_name = config.gs.name;
+gs_lat_N = config.gs.lat_N_deg;  % North latitude
+gs_lon_E = config.gs.lon_E_deg;  % East longitude
+gs_altitude = config.gs.altitude_m;  % [m] Altitude of the GS
+elevation_min_angle = config.gs.elevation_min_angle_deg;  % [degrees] Min angle of elev.
 
 % Power, gain and losses
 
-tx_power_gs_dBm = 22;  % [dBm] Transmission power in the Ground Station tx
-tx_ant_gain_gs_dB = 0;  % [dBi] Antenna Gain in the GS tx
-tx_loss_gs_dB = 3;  % [dB] TX system power loss in the ground station
-rx_loss_gs_dB = 3;  % [dB] RX system power loss in the ground station
+tx_power_gs_dBm = config.gs.tx.power_dBm;  % [dBm] Transmission power in the Ground Station tx
+tx_ant_gain_gs_dB = config.gs.ant.gain_dBi;  % [dBi] Antenna Gain in the GS tx
+tx_loss_gs_dB = config.gs.tx.loss_dB;  % [dB] TX system power loss in the ground station
+rx_loss_gs_dB = config.gs.rx.loss_dB;  % [dB] RX system power loss in the ground station
 
 % KNOWN PROBLEM:
 % Which System Loss (insertion, connectors, etc) to consider?
 
 % Noise 
 
-rx_nf_gs_dB = 6;  % [dB] System noise figure in RX in the ground station
+rx_nf_gs_dB = config.gs.rx.nf_dB;  % [dB] System noise figure in RX in the ground station
 
 % KNOWN PROBLEM:
 % Receivers noise figure? Should consider the complete receiver chain NF, not only the LNA
 % (i.e.: from antenna to the transceiver input pin)
 
-ant_ambient_temp_gs_K = 300;  % [K] Antenna ambient temperature in the ground station
-ant_noise_temp_gs_K = 290;  % [K] Antenna noise temperature in the ground station
+ant_ambient_temp_gs_K = config.gs.ant.ambient_temp_K;  % [K] Antenna ambient temperature in the ground station
+ant_noise_temp_gs_K = config.gs.ant.noise_temp_K;  % [K] Antenna noise temperature in the ground station
 % The equivalent noise temperature seen at the receive output of the antenna. Describes 
 % how much noise an antenna produces in a given environment.
 
@@ -117,17 +179,17 @@ rx_GNTR_gs_dB_K = tx_ant_gain_gs_dB - rx_nf_gs_dB - 10 * log10(ant_ambient_temp_
 
 % Power, gain and losses
 
-tx_power_sat_dBm = 33;  % [dBm] Transmission power in the satellite tx
-tx_ant_gain_sat_dB = 0;  % [dBi] Antenna Gain in the sat tx
-tx_loss_sat_dB = 1;  % [dB] System power loss in TX in the satellite
-rx_loss_sat_dB = 1;  % [dB] System power loss in RX in the satellite
+tx_power_sat_dBm = config.sat.tx.power_dBm;  % [dBm] Transmission power in the satellite tx
+tx_ant_gain_sat_dB = config.sat.tx.loss_dB;  % [dBi] Antenna Gain in the sat tx
+tx_loss_sat_dB = config.sat.tx.loss_dB;  % [dB] System power loss in TX in the satellite
+rx_loss_sat_dB = config.sat.rx.loss_dB;  % [dB] System power loss in RX in the satellite
 
 % Noise 
 
-rx_nf_sat_dB = 3;  % [dB] System noise figure in RX in the ground station
+rx_nf_sat_dB = config.sat.rx.nf_dB;  % [dB] System noise figure in RX in the ground station
 
-ant_ambient_temp_sat_K = 350;  % [K] Antenna ambient temperature in the satellite
-ant_noise_temp_sat_K = 2340;  % [K] Antenna noise temperature in the satellite
+ant_ambient_temp_sat_K = config.sat.ant.ambient_temp_K;  % [K] Antenna ambient temperature in the satellite
+ant_noise_temp_sat_K = config.sat.ant.noise_temp_K;  % [K] Antenna noise temperature in the satellite
 
 % [dB/K] G/T in the sat rx
 rx_GNTR_sat_dB_K = tx_ant_gain_sat_dB - rx_nf_sat_dB ... 
@@ -138,9 +200,9 @@ rx_GNTR_sat_dB_K = tx_ant_gain_sat_dB - rx_nf_sat_dB ...
 % ----------------------------------------------------------------------------------------
 % Simulation time, stop time and step
 
-startTime = datetime(2023, 4, 1, 7, 30, 0);  % [date, time] 2023-04-01 07:30:00
-stopTime = startTime + hours(4);  % Simulation time, stop after 4 hours
-sampleTime = 10;  % [s] Simulation step
+startTime = config.sim.startTime;  % [date, time] 2023-04-01 07:30:00
+stopTime = config.sim.stopTime;  % Simulation time
+sampleTime = config.sim.sampleTime;  % [s] Simulation step
 
 
 
@@ -152,7 +214,7 @@ scenario = satelliteScenario(startTime, stopTime, sampleTime);  % Satellite scen
 % ----------------------------------------------------------------------------------------
 % Satellite
 
-sat = satellite(scenario, "EstigiaTLE.tle");  % Import satellite TLE file
+sat = satellite(scenario, config.sat.tle_file);  % Import satellite TLE file
 groundTrack(sat, LeadTime=1200);  % Show satellite ground tracks with a lead of 20 min
 
 % ----------------------------------------------------------------------------------------
@@ -160,6 +222,7 @@ groundTrack(sat, LeadTime=1200);  % Show satellite ground tracks with a lead of 
 gs = groundStation(scenario, Name=gs_name, Latitude=gs_lat_N, Longitude=gs_lon_E, ...
                    Altitude=gs_altitude, MinElevationAngle=elevation_min_angle);
 
+% UNUSED IN FUNCTION ---------------------------------------------------------------------
 % Create a conical sensor (area over the globe) using the elevation. This is equivalent to 
 % the satellite coverage with the minimum elevation. May be inexact, use only for 
 % graphical representation. Assuming LEO, low orbit eccentricity.
@@ -168,15 +231,15 @@ gs = groundStation(scenario, Name=gs_name, Latitude=gs_lat_N, Longitude=gs_lon_E
 % Elevation" S. Cakaj, B. Kamo, A. Lala, A. Rakipi. International Journal of Advanced 
 % Computer Science and Applications (IJACSA)
 
-sat_pos_start = states(sat, startTime, CoordinateFrame="geographic");  % [lat,long,height]
-sat_height = sat_pos_start(3) / 1e3;  % [km] Height of the satellite over Earth's surface
+% sat_pos_start = states(sat, startTime, CoordinateFrame="geographic");  % [lat,long,height]
+% sat_height = sat_pos_start(3) / 1e3;  % [km] Height of the satellite over Earth's surface
 
 % [degrees] Field-of-view angle 
-fov_angle = 2 * (180/pi) * asin(R_E/(R_E+sat_height) * cos(elevation_min_angle*(pi/180)));
+% fov_angle = 2 * (180/pi) * asin(R_E/(R_E+sat_height) * cos(elevation_min_angle*(pi/180)));
 
 % Add conical sensor to represent the satellite footprint
-sat_coverage = conicalSensor(sat, MaxViewAngle=fov_angle);
-sat_fov = fieldOfView(sat_coverage);
+% sat_coverage = conicalSensor(sat, MaxViewAngle=fov_angle);
+% sat_fov = fieldOfView(sat_coverage);
 
 
 
@@ -195,22 +258,24 @@ ac_sat_plot_data = double(ac_sat_plot_data);  % Casting for the operation below
 % ----------------------------------------------------------------------------------------
 % Output
 
-fprintf("\n-----------------------------------------\n" + ...
-    "ACCESS INTERVALS:\n\n");
-disp(ac_sat_intervals);
+output.access_intervals = ac_sat_intervals;
+
+% fprintf("\n-----------------------------------------\n" + ...
+%     "ACCESS INTERVALS:\n\n");
+% disp(ac_sat_intervals);
 
 
 % ----------------------------------------------------------------------------------------
 % Plot points in time where there is access to the satellite.
 
-figure();
-plot(ac_sat_time, ac_sat_plot_data, '.-');
-title("Observation intervals: line-of-sight with $\varepsilon >= \varepsilon_{min}$" + ...
-      ". [1: access; 0: no access]", interpreter="latex");
-xlabel("Simulation Time", interpreter="latex");
-ylabel("Access status", interpreter="latex");
-ylim([-0.5, 1.5]);
-grid on; grid minor;
+% figure();
+% plot(ac_sat_time, ac_sat_plot_data, '.-');
+% title("Observation intervals: line-of-sight with $\varepsilon >= \varepsilon_{min}$" + ...
+%       ". [1: access; 0: no access]", interpreter="latex");
+% xlabel("Simulation Time", interpreter="latex");
+% ylabel("Access status", interpreter="latex");
+% ylim([-0.5, 1.5]);
+% grid on; grid minor;
 
 
 
@@ -243,7 +308,7 @@ gs_receiver = receiver( ...
     Name = "GS RX" ...  % Name
 );
 
-pattern(gs_receiver, freq_Hz, Size=1e5);  % Show radiation pattern in 3D viewer
+% pattern(gs_receiver, freq_Hz, Size=1e5);  % Show radiation pattern in 3D viewer
 
 
 % ----------------------------------------------------------------------------------------
@@ -272,7 +337,7 @@ sat_receiver = receiver( ...
     Name = "SAT RX" ...  % Name
 );
 
-pattern(sat_transmitter, Size=1e5);  % Show radiation pattern in 3D viewer
+% pattern(sat_transmitter, Size=1e5);  % Show radiation pattern in 3D viewer
 
 
 
@@ -294,28 +359,33 @@ range_sat_gs_m(~logical(ac_sat_plot_data)) = NaN;
 % ----------------------------------------------------------------------------------------
 % Plot azimuth, elevation, range
 
-figure;
+output.aer.azimuth_deg = azimuth_sat_gs_deg;
+output.aer.elevation_deg = elevation_sat_gs_deg;
+output.aer.range_m = range_sat_gs_m;
+output.aer.time = aer_sat_gs_time;
 
-subplot(3, 1, 1);
-plot(aer_sat_gs_time, azimuth_sat_gs_deg); 
-grid on; grid minor;
-xlabel("Simulation time", interpreter="latex");
-ylabel("Azimuth (degrees)", interpreter="latex");
-title("Ground Station Azimuth", interpreter="latex");
-
-subplot(3, 1, 2);
-plot(aer_sat_gs_time, elevation_sat_gs_deg); 
-grid on; grid minor;
-xlabel("Simulation time", interpreter="latex");
-ylabel("Elevation (degrees)", interpreter="latex");
-title("Ground Station Elevation", interpreter="latex");
-
-subplot(3, 1, 3);
-plot(aer_sat_gs_time, range_sat_gs_m); 
-grid on; grid minor;
-xlabel("Simulation time", interpreter="latex");
-ylabel("Distance (m)", interpreter="latex");
-title("Range between GS and Sat", interpreter="latex");
+% figure;
+% 
+% subplot(3, 1, 1);
+% plot(aer_sat_gs_time, azimuth_sat_gs_deg); 
+% grid on; grid minor;
+% xlabel("Simulation time", interpreter="latex");
+% ylabel("Azimuth (degrees)", interpreter="latex");
+% title("Ground Station Azimuth", interpreter="latex");
+% 
+% subplot(3, 1, 2);
+% plot(aer_sat_gs_time, elevation_sat_gs_deg); 
+% grid on; grid minor;
+% xlabel("Simulation time", interpreter="latex");
+% ylabel("Elevation (degrees)", interpreter="latex");
+% title("Ground Station Elevation", interpreter="latex");
+% 
+% subplot(3, 1, 3);
+% plot(aer_sat_gs_time, range_sat_gs_m); 
+% grid on; grid minor;
+% xlabel("Simulation time", interpreter="latex");
+% ylabel("Distance (m)", interpreter="latex");
+% title("Range between GS and Sat", interpreter="latex");
 
 
 
@@ -331,22 +401,29 @@ title("Range between GS and Sat", interpreter="latex");
 % ----------------------------------------------------------------------------------------
 % Plot
 
-figure();
-subplot(2, 1, 1);
-plot(latency_time, latency_delay(1, :) .* 1e3);  % in milliseconds
-xlim([latency_time(1), latency_time(end)]);
-title("Satellite Latency in observation time", interpreter="latex");
-xlabel("Simulation Time", interpreter="latex");
-ylabel("Latency (ms)", interpreter="latex");
-grid on; grid minor;
+output.latency.delay_s = latency_delay;
+output.latency.time = latency_time;
 
-subplot(2, 1, 2);
-plot(doppler_time, doppler_fshift * 1e-3);  % kHz
-xlim([doppler_time(1), doppler_time(end)]);
-title("Doppler Shift in observation time", interpreter="latex");
-xlabel("Simulation Time", interpreter="latex");
-ylabel("Doppler Frequency Shift (kHz)", interpreter="latex");
-grid on; grid minor;
+output.doppler.fshift_Hz = doppler_fshift;
+output.doppler.time = doppler_time;
+output.doppler.info = doppler_info;
+
+% figure();
+% subplot(2, 1, 1);
+% plot(latency_time, latency_delay(1, :) .* 1e3);  % in milliseconds
+% xlim([latency_time(1), latency_time(end)]);
+% title("Satellite Latency in observation time", interpreter="latex");
+% xlabel("Simulation Time", interpreter="latex");
+% ylabel("Latency (ms)", interpreter="latex");
+% grid on; grid minor;
+% 
+% subplot(2, 1, 2);
+% plot(doppler_time, doppler_fshift * 1e-3);  % kHz
+% xlim([doppler_time(1), doppler_time(end)]);
+% title("Doppler Shift in observation time", interpreter="latex");
+% xlabel("Simulation Time", interpreter="latex");
+% ylabel("Doppler Frequency Shift (kHz)", interpreter="latex");
+% grid on; grid minor;
 
 
 
@@ -385,19 +462,26 @@ end
 % - The cross-polarization discrimination prediction method is valid for the frequency 
 %   values in the range 4 to 55 GHz. For less than 4 GHz, the 4 GHz point will be used.
 
+if config.comms.freq_Hz < 1e9
+    p618_freq = 1e9;
+else
+    p618_freq = config.comms.freq_Hz;
+end
+
+
 p618cfg = p618Config(...
-    Frequency = 1e9, ...  % [Hz] Carrier frequency
+    Frequency = p618_freq, ...  % [Hz] Carrier frequency
     ElevationAngle = elevation_min_angle, ...  % [degrees] Elevation Angle, worst-case
     Latitude = gs_lat_N, ...  % Degrees North
     Longitude = gs_lon_E, ...  % Degrees East
-    GasAnnualExceedance = 0.1, ...  % Average annual time percentage of excess for gas att
-    CloudAnnualExceedance = 0.1, ...  % Avg annual time percentage of excess for cloud att
-    RainAnnualExceedance = 0.001, ...  % Avg annual time percentage of excess for rain att
-    ScintillationAnnualExceedance = 0.01, ...  % Avg annual time % of excess scintillation
-    TotalAnnualExceedance = 0.001, ...  % Avg annual time % of excess for total att
-    PolarizationTiltAngle = 0, ...  % [degrees, -90 to 90]  Polarization tilt angle
-    AntennaDiameter = 1, ...  % [m] Physical diameter of the antenna. Default = 1 m
-    AntennaEfficiency = 0.5 ...  % [0-1] Antenna efficiency
+    GasAnnualExceedance = config.p618.GasAnnualExceedance, ...  % Average annual time percentage of excess for gas att
+    CloudAnnualExceedance = config.p618.CloudAnnualExceedance, ...  % Avg annual time percentage of excess for cloud att
+    RainAnnualExceedance = config.p618.RainAnnualExceedance, ...  % Avg annual time percentage of excess for rain att
+    ScintillationAnnualExceedance = config.p618.ScintillationAnnualExceedance, ...  % Avg annual time % of excess scintillation
+    TotalAnnualExceedance = config.p618.TotalAnnualExceedance, ...  % Avg annual time % of excess for total att
+    PolarizationTiltAngle = config.p618.PolarizationTiltAngle, ...  % [degrees, -90 to 90]  Polarization tilt angle
+    AntennaDiameter = config.p618.AntennaDiameter, ...  % [m] Physical diameter of the antenna. Default = 1 m
+    AntennaEfficiency = config.p618.AntennaEfficiency ...  % [0-1] Antenna efficiency
 );
 
 
@@ -420,7 +504,7 @@ p618cfg = p618Config(...
 % ----------------------------------------------------------------------------------------
 % Polarization loss
 
-p618_pol_loss = 3;  % [dB] Polarization loss. Worst-case: 3 dB
+p618_pol_loss = config.p618.PolLoss_dB;  % [dB] Polarization loss. Worst-case: 3 dB
 
 
 % ----------------------------------------------------------------------------------------
@@ -432,16 +516,27 @@ p618_loss_total = p618_atm_loss_dB.At + p618_pol_loss;
 % ----------------------------------------------------------------------------------------
 % Output
 
-fprintf("\n\n-----------------------------------------\nATMOSPHERIC LOSSES:\n");
-fprintf("\nGaseous attenuation = %.3f dB", p618_atm_loss_dB.Ag);
-fprintf("\nCloud and fog attenuation = %.3f dB", p618_atm_loss_dB.Ac);
-fprintf("\nRain attenuation = %.3f dB", p618_atm_loss_dB.Ar);
-fprintf("\nAttenuation due to tropospheric scintillation = %.3f dB", p618_atm_loss_dB.As);
-fprintf("\nTotal atmospheric attenuation = %.3f dB", p618_atm_loss_dB.At);
-fprintf("\nCross-polarization discrimination = %.3f dB", p618_xpol_discr_dB);
-fprintf("\nSky noise temperature = %.3f K", p618_temp_sky_K);
-fprintf("\nPolarization loss (MANUAL PICK) = %.3f dB", p618_pol_loss);
-fprintf("\nTOTAL LOSSES = Total att. + Pol. loss = %.3f dB\n\n", p618_loss_total);
+output.p618.Ag_dB = p618_atm_loss_dB.Ag;
+output.p618.Ac_dB = p618_atm_loss_dB.Ac;
+output.p618.Ar_dB = p618_atm_loss_dB.Ar;
+output.p618.As_dB = p618_atm_loss_dB.As;
+output.p618.At_dB = p618_atm_loss_dB.At;
+output.p618.xpol_discr_dB = p618_xpol_discr_dB;
+output.p618.temp_sky_K = p618_temp_sky_K;
+output.p618.pol_loss_dB = p618_pol_loss;
+output.p618.loss_total_dB = p618_loss_total;
+
+
+% fprintf("\n\n-----------------------------------------\nATMOSPHERIC LOSSES:\n");
+% fprintf("\nGaseous attenuation = %.3f dB", p618_atm_loss_dB.Ag);
+% fprintf("\nCloud and fog attenuation = %.3f dB", p618_atm_loss_dB.Ac);
+% fprintf("\nRain attenuation = %.3f dB", p618_atm_loss_dB.Ar);
+% fprintf("\nAttenuation due to tropospheric scintillation = %.3f dB", p618_atm_loss_dB.As);
+% fprintf("\nTotal atmospheric attenuation = %.3f dB", p618_atm_loss_dB.At);
+% fprintf("\nCross-polarization discrimination = %.3f dB", p618_xpol_discr_dB);
+% fprintf("\nSky noise temperature = %.3f K", p618_temp_sky_K);
+% fprintf("\nPolarization loss (MANUAL PICK) = %.3f dB", p618_pol_loss);
+% fprintf("\nTOTAL LOSSES = Total att. + Pol. loss = %.3f dB\n\n", p618_loss_total);
 
 
 
@@ -480,25 +575,35 @@ link_DL_rxpower_dBm = link_DL_PRI_dBW + 30 - p618_loss_total;  % [dBm] DL receiv
 % ----------------------------------------------------------------------------------------
 % Plot
 
-figure;
+output.link.ul.piso_dBW = link_UL_PISO_dBW;
+output.link.ul.pri_dBW = link_UL_PRI_dBW;
+output.link.ul.time = link_UL_time;
+output.link.ul.rxpower_dBm = link_UL_rxpower_dBm;
 
-subplot(2, 1, 1);
-plot(link_UL_time, link_UL_rxpower_dBm); 
-grid on; grid minor;
-xlabel("Simulation time", interpreter="latex");
-ylabel("Received signal strength (dBm)", interpreter="latex");
-title("Uplink", interpreter="latex");
-yline(rx_limit_sensitivity_sat, Color="#5e5e5e", LineStyle="--", Label="Sat sensitivity");
+output.link.dl.piso_dBW = link_DL_PISO_dBW;
+output.link.dl.pri_dBW = link_DL_PRI_dBW;
+output.link.dl.time = link_DL_time;
+output.link.dl.rxpower_dBm = link_DL_rxpower_dBm;
 
-subplot(2, 1, 2);
-plot(link_DL_time, link_DL_rxpower_dBm); 
-grid on; grid minor;
-xlabel("Simulation time", interpreter="latex");
-ylabel("Received signal strength (dBm)", interpreter="latex");
-title("Downlink", interpreter="latex");
-yline(rx_limit_sensitivity_gs, Color="#5e5e5e", LineStyle="--", Label="GS sensitivity");
-
-sgtitle("Received signal strength in uplink and downlink", interpreter="latex");
+% figure;
+% 
+% subplot(2, 1, 1);
+% plot(link_UL_time, link_UL_rxpower_dBm); 
+% grid on; grid minor;
+% xlabel("Simulation time", interpreter="latex");
+% ylabel("Received signal strength (dBm)", interpreter="latex");
+% title("Uplink", interpreter="latex");
+% yline(rx_limit_sensitivity_sat, Color="#5e5e5e", LineStyle="--", Label="Sat sensitivity");
+% 
+% subplot(2, 1, 2);
+% plot(link_DL_time, link_DL_rxpower_dBm); 
+% grid on; grid minor;
+% xlabel("Simulation time", interpreter="latex");
+% ylabel("Received signal strength (dBm)", interpreter="latex");
+% title("Downlink", interpreter="latex");
+% yline(rx_limit_sensitivity_gs, Color="#5e5e5e", LineStyle="--", Label="GS sensitivity");
+% 
+% sgtitle("Received signal strength in uplink and downlink", interpreter="latex");
 
 
 
@@ -564,25 +669,29 @@ cnr_time = ac_sat_time;  % time vector for plotting
 % ----------------------------------------------------------------------------------------
 % Plot
 
-figure;
+output.cnr.sat_rx_dB = ul_CNR;
+output.cnr.gs_rx_dB = dl_CNR;
+output.cnr.time = cnr_time;
 
-subplot(2, 1, 1);
-plot(cnr_time, ul_CNR); 
-grid on; grid minor;
-xlabel("Simulation time", interpreter="latex");
-ylabel("Carrier-to-Noise Ratio (dB)", interpreter="latex");
-title("Uplink", interpreter="latex");
-yline(rx_limit_cnr_sat, Color="#5e5e5e", LineStyle="--", Label="Sat CNR limit");
-
-subplot(2, 1, 2);
-plot(cnr_time, dl_CNR); 
-grid on; grid minor;
-xlabel("Simulation time", interpreter="latex");
-ylabel("Carrier-to-Noise Ratio (dB)", interpreter="latex");
-title("Downlink", interpreter="latex");
-yline(rx_limit_cnr_gs, Color="#5e5e5e", LineStyle="--", Label="GS CNR limit");
-
-sgtitle("Carrier-to-Noise Ratio (CNR) in uplink and downlink", interpreter="latex");
+% figure;
+% 
+% subplot(2, 1, 1);
+% plot(cnr_time, ul_CNR); 
+% grid on; grid minor;
+% xlabel("Simulation time", interpreter="latex");
+% ylabel("Carrier-to-Noise Ratio (dB)", interpreter="latex");
+% title("Uplink", interpreter="latex");
+% yline(rx_limit_cnr_sat, Color="#5e5e5e", LineStyle="--", Label="Sat CNR limit");
+% 
+% subplot(2, 1, 2);
+% plot(cnr_time, dl_CNR); 
+% grid on; grid minor;
+% xlabel("Simulation time", interpreter="latex");
+% ylabel("Carrier-to-Noise Ratio (dB)", interpreter="latex");
+% title("Downlink", interpreter="latex");
+% yline(rx_limit_cnr_gs, Color="#5e5e5e", LineStyle="--", Label="GS CNR limit");
+% 
+% sgtitle("Carrier-to-Noise Ratio (CNR) in uplink and downlink", interpreter="latex");
 
 
 
@@ -590,16 +699,27 @@ sgtitle("Carrier-to-Noise Ratio (CNR) in uplink and downlink", interpreter="late
 %% Simulation 3D visualization
 % This representation consumes time and their windows can be an annoyance.
 
-if show3Dviewer == true  % only if requested
+% UNUSED IN FUNCTION ---------------------------------------------------------------------
+% if show3Dviewer == true  % only if requested
+% 
+%     v = satelliteScenarioViewer(scenario, ShowDetails=true);
+%     sat.ShowLabel = true;
+%     gs.ShowLabel = true;
+% 
+%     show(sat);  % Show satellite
+% 
+%     play(scenario);  % Show scenario, play it
+% 
+% end
 
-    v = satelliteScenarioViewer(scenario, ShowDetails=true);
-    sat.ShowLabel = true;
-    gs.ShowLabel = true;
-    
-    show(sat);  % Show satellite
-    
-    play(scenario);  % Show scenario, play it
+
+
+
+
+
+
+
+
 
 end
-
 
